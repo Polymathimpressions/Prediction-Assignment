@@ -1,0 +1,139 @@
+---
+title: "Prediction Assignment"
+author: "Keith Krause"
+date: "4/17/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Project Overview
+This project utilizes the data from personal activity devices to quantify movement.  Utilizing data provided courtesy of Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. *Wearable Computing: Accelerometers’ Data Classification of Body Postures and Movements *, we will attempt to predict the manner of how a participant performed the exercise.  The data includes accelerometers on the belt, forearm, arm and dumbell on each of the six participants. They performed barbell lifts correctly and incorrectly in five different ways.  A training data set will be used to build the model with a seperate test data set to validate the model at the end.   
+
+## Package Loading
+The below packages were used in this project.
+```{r packages}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(knitr)
+```
+
+## Load Data
+```{r  Data load}
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(trainUrl), na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(testUrl), na.strings=c("NA","#DIV/0!",""))
+
+dim(training)
+dim(testing)
+```
+There are 19622 observation with 160 vaiables in the training dataset.  
+
+## Clean the Data
+All NA and empty values are removed from the datasets.
+```{r data cleaning}
+training<- training[, colSums(is.na(training)) == 0]
+testing <- testing[, colSums(is.na(testing)) == 0]
+dim(training)
+dim(testing)
+
+```
+Remove the first seven variables that do not have an impact on **classe** variable.
+```{R column removal}
+training<- training[,-c(1:7)]
+testing<- testing[,-c(1:7)]
+dim(training)
+dim(testing)
+```
+## Prediction Preperation
+Set seed and split the data into 70% training/30% testing data.  It will also be used to determine out of sample errors. 
+```{R data split}
+set.seed(12345)
+inTrain<- createDataPartition(training$classe, p = 0.7, list = FALSE)
+training <- training[inTrain, ]
+traintest <- training[-inTrain, ]
+dim(training)
+dim(traintest)
+```
+
+## Model Building
+We will use classification trees, random forests and two different algorithms to predict the outcome. 
+
+### Classification Tree
+Obtain the model and plot the classification tree.
+```{R classificaiton tree}
+modFit1 <- rpart(classe ~ ., data=training, method="class")
+fancyRpartPlot(modFit1)
+```
+
+
+Validate the model by using the set aside test data, **traintest**, to see how it performs based on its accuracy variable.
+```{R prediction classification tree}
+predictions1 <- predict(modFit1, traintest, type = "class")
+cmtree <- confusionMatrix(predictions1, traintest$classe)
+cmtree
+```
+We then plot the matrix results to see that it has a low *accuracy rating of 0.7512* and there for has a considerable *out of sample error of approximately 0.2488*.
+```{R matrix class tree}
+plot(cmtree$table, col = cmtree$byClass, main = paste("Decision Tree - Accuracy =", round(cmtree$overall['Accuracy'], 4)))
+```
+
+### Random Forests
+```{R random forests}
+modFit2<- randomForest(classe ~ ., data = training)
+predictions2<- predict(modFit2, traintest, type= "class")
+cmrf<- confusionMatrix(predictions2, traintest$classe)
+cmrf
+```
+
+Plot the model
+```{R matrix RF plot}
+plot(cmrf$table, col = cmrf$byClass, main = paste("Random Forest Confusion Matrix: Accuracy =", round(cmrf$overall['Accuracy'], 4)))
+```
+
+
+As seen above, the *accuracy rate is 1* and the *out of sample error is 0*.  There is a possibilty that this is due to overfitting the model.  
+
+### Prediction with Generalized Boosted Regression
+```{R GBR model}
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modFit3  <- train(classe ~ ., data=training, method = "gbm", trControl = controlGBM, verbose = FALSE)
+modFit3$finalModel
+```
+Print the General Boosted Regression Model summary
+```{R print GBR summary}
+print(modFit3)
+```
+The final values used for the model were n.trees = 150, interaction.depth = 3, shrinkage = 0.1 and n.minobsinnode = 10
+
+Validate the model
+```{R GBR validate}
+predictions3 <- predict(modFit3, newdata=traintest)
+cmGBM <- confusionMatrix(predictions3, traintest$classe)
+cmGBM
+```
+Plot the model
+```{R matrix GBR}
+plot(cmGBM$table, col = cmGBM$byClass, main = paste("Generalized Boost Regression Confusion Matrix: Accuracy =", round(cmGBM$overall['Accuracy'], 4)))
+```
+
+
+The *accuracy rate is 0.9739* for the Generalized Boosted Regression Model.  It has an *out of sample error of .0261*
+
+## Best Prediction Model for Test Data
+Based on the accuracy rates of the three models, it can be determined that the second model, Random Forest, is the best model to predict the outcomes.  We will now use the test data to vaidate it.
+```{R validate data model}
+TestPrediction<- predict(modFit2, newdata = testing)
+TestPrediction
+```
+The results of the TestPrediction will be submitted to the *Course Project Prediction Quiz*. 
